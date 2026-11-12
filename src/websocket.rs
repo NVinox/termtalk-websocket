@@ -10,6 +10,8 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use futures_util::{SinkExt, StreamExt};
 
+use crate::logger;
+
 const DEFAULT_PORT: u16 = 8000;
 
 pub async fn create() {
@@ -24,13 +26,13 @@ pub async fn create() {
 
     loop {
         let (stream, client_address) = listener.accept().await.unwrap();
-        println!("Client with IP {} is connected", client_address);
+        print_log(format!("Client with IP {} is connected", client_address).as_str());
 
         let clients_clone = clients.clone();
 
         tokio::spawn(async move {
             let ws_stream = accept_async(stream).await.unwrap();
-            println!("Client with IP {} websocket successed", client_address);
+            print_log(format!("Client with IP {} websocket successed", client_address).as_str());
 
             let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
             let (mut ws_tx, mut ws_rx) = ws_stream.split();
@@ -64,7 +66,12 @@ pub async fn create() {
             }
 
             clients_clone.lock().await.remove(&client_address);
-            println!("Client with IP {} disconnected", client_address);
+            print_log(format!("Client with IP {} disconnected", client_address).as_str());
         });
     }
+}
+
+fn print_log(message: &str) {
+    println!("{}", message);
+    logger::write_log(message);
 }
