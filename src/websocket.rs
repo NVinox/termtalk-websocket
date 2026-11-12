@@ -24,13 +24,13 @@ pub async fn create() {
 
     loop {
         let (stream, client_address) = listener.accept().await.unwrap();
-        println!("Client with ip {} is connected", client_address);
+        println!("Client with IP {} is connected", client_address);
 
         let clients_clone = clients.clone();
 
         tokio::spawn(async move {
             let ws_stream = accept_async(stream).await.unwrap();
-            println!("Client with ip {} websocket successed", client_address);
+            println!("Client with IP {} websocket successed", client_address);
 
             let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
             let (mut ws_tx, mut ws_rx) = ws_stream.split();
@@ -49,16 +49,22 @@ pub async fn create() {
             });
 
             while let Some(Ok(msg)) = ws_rx.next().await {
-                if msg.is_text() {
-                    let text = msg.to_text().unwrap();
-                    let all_clients = clients_clone.lock().await;
-                    let message = Message::Text(text.into());
+                match msg {
+                    Message::Text(text) => {
+                        let all_clients = clients_clone.lock().await;
+                        let message = Message::Text(text.into());
 
-                    for tx_pipe in all_clients.values() {
-                        let _ = tx_pipe.send(message.clone());
+                        for tx_pipe in all_clients.values() {
+                            let _ = tx_pipe.send(message.clone());
+                        }
                     }
-                }
+                    Message::Close(_) => break,
+                    _ => {}
+                };
             }
+
+            clients_clone.lock().await.remove(&client_address);
+            println!("Client with IP {} disconnected", client_address);
         });
     }
 }
