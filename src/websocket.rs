@@ -10,8 +10,19 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use futures_util::{SinkExt, StreamExt};
 
+use serde::{Deserialize, Serialize};
+use serde_json;
+
+const DEFAULT_PORT: u16 = 8000;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ChatEvent {
+    UserMessage { username: String, text: String },
+    Join { username: String },
+}
+
 pub async fn create() {
-    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8000);
+    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), DEFAULT_PORT);
     let listener = TcpListener::bind(address)
         .await
         .expect("Error to create websocket");
@@ -36,21 +47,27 @@ pub async fn create() {
             clients_clone.lock().await.insert(client_address, tx);
 
             tokio::spawn(async move {
-                while let Some(message) = rx.recv().await {
+                while let Some(msg) = rx.recv().await {
+                    let text = msg.to_text().unwrap();
+                    let message = Message::Text(text.into());
+
                     if ws_tx.send(message).await.is_err() {
                         break;
                     }
                 }
             });
 
-            while let Some(Ok(message)) = ws_rx.next().await {
-                if message.is_text() {
-                    let text = message.to_text().unwrap();
-                    let broadcast_msg = Message::Text(text.to_string().into());
-                    let all_clients = clients_clone.lock().await;
+            while let Some(Ok(msg)) = ws_rx.next().await {
+                if msg.is_text() {
+                    let text = msg.to_text().unwrap();
 
-                    for tx_pipe in all_clients.values() {
-                        let _ = tx_pipe.send(broadcast_msg.clone());
+                    if serde_json::from_str::<ChatEvent>(text).is_ok() {
+                        let message = Message::Text(text.into());
+                        let all_clients = clients_clone.lock().await;
+
+                        for tx_pipe in all_clients.values() {
+                            let _ = tx_pipe.send(message.clone());
+                        }
                     }
                 }
             }
