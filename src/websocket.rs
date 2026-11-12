@@ -10,16 +10,7 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use futures_util::{SinkExt, StreamExt};
 
-use serde::{Deserialize, Serialize};
-use serde_json;
-
 const DEFAULT_PORT: u16 = 8000;
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ChatEvent {
-    UserMessage { username: String, text: String },
-    Join { username: String },
-}
 
 pub async fn create() {
     let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), DEFAULT_PORT);
@@ -60,14 +51,11 @@ pub async fn create() {
             while let Some(Ok(msg)) = ws_rx.next().await {
                 if msg.is_text() {
                     let text = msg.to_text().unwrap();
+                    let all_clients = clients_clone.lock().await;
+                    let message = Message::Text(text.into());
 
-                    if serde_json::from_str::<ChatEvent>(text).is_ok() {
-                        let message = Message::Text(text.into());
-                        let all_clients = clients_clone.lock().await;
-
-                        for tx_pipe in all_clients.values() {
-                            let _ = tx_pipe.send(message.clone());
-                        }
+                    for tx_pipe in all_clients.values() {
+                        let _ = tx_pipe.send(message.clone());
                     }
                 }
             }
