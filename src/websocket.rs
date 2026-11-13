@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -10,19 +11,17 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 
 use futures_util::{SinkExt, StreamExt};
 
-use serde::{Deserialize, Serialize};
-use serde_json;
+use crate::logger;
 
 const DEFAULT_PORT: u16 = 8000;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ChatEvent {
-    UserMessage { username: String, text: String },
-    Join { username: String },
-}
-
 pub async fn create() {
-    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), DEFAULT_PORT);
+    let port: u16 = env::var("PORT")
+        .ok()
+        .and_then(|val| val.parse().ok())
+        .unwrap_or(DEFAULT_PORT);
+
+    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
     let listener = TcpListener::bind(address)
         .await
         .expect("Error to create websocket");
@@ -33,13 +32,13 @@ pub async fn create() {
 
     loop {
         let (stream, client_address) = listener.accept().await.unwrap();
-        println!("Client with ip {} is connected", client_address);
+        print_log(format!("Client with IP {} is connected", client_address).as_str());
 
         let clients_clone = clients.clone();
 
         tokio::spawn(async move {
             let ws_stream = accept_async(stream).await.unwrap();
-            println!("Client with ip {} websocket successed", client_address);
+            print_log(format!("Client with IP {} websocket successed", client_address).as_str());
 
             let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
             let (mut ws_tx, mut ws_rx) = ws_stream.split();
@@ -58,19 +57,27 @@ pub async fn create() {
             });
 
             while let Some(Ok(msg)) = ws_rx.next().await {
-                if msg.is_text() {
-                    let text = msg.to_text().unwrap();
-
-                    if serde_json::from_str::<ChatEvent>(text).is_ok() {
-                        let message = Message::Text(text.into());
+                match msg {
+                    Message::Text(text) => {
                         let all_clients = clients_clone.lock().await;
+                        let message = Message::Text(text.into());
 
                         for tx_pipe in all_clients.values() {
                             let _ = tx_pipe.send(message.clone());
                         }
                     }
-                }
+                    Message::Close(_) => break,
+                    _ => {}
+                };
             }
+
+            clients_clone.lock().await.remove(&client_address);
+            print_log(format!("Client with IP {} disconnected", client_address).as_str());
         });
     }
+}
+
+fn print_log(message: &str) {
+    println!("{}", message);
+    logger::write_log(message);
 }

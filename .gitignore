@@ -1,1 +1,5 @@
 /target
+/logs
+
+.env.development
+.env.production

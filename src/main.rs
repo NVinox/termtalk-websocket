@@ -1,3 +1,4 @@
+mod logger;
 mod websocket;
 
 #[tokio::main]
