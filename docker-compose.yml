@@ -1,0 +1,31 @@
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+    container_name: termtalk-server-dev
+    env_file:
+      - .env.development
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    volumes:
+      - .:/app
+      - cargo_cache:/usr/local/cargo
+      - target_cache:/app/target
+
+  prod:
+    build:
+      context: .
+      target: prod
+    container_name: termtalk-server-prod
+    env_file:
+      - .env.production
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  cargo_cache:
+  target_cache:

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
@@ -15,7 +16,12 @@ use crate::logger;
 const DEFAULT_PORT: u16 = 8000;
 
 pub async fn create() {
-    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), DEFAULT_PORT);
+    let port: u16 = env::var("PORT")
+        .ok()
+        .and_then(|val| val.parse().ok())
+        .unwrap_or(DEFAULT_PORT);
+
+    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
     let listener = TcpListener::bind(address)
         .await
         .expect("Error to create websocket");
