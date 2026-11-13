@@ -472,7 +472,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "termtalk-websocket"
+name = "termtalk_server"
 version = "0.1.0"
 dependencies = [
  "chrono",
