@@ -8,3 +8,9 @@ chrono = "0.4.45"
 futures-util = "0.3.34"
 tokio = { version = "1.54.1", features = ["full"] }
 tokio-tungstenite = "0.30.0"
+
+[profile.release]
+strip = true
+lto = true
+opt-level = 3
+codegen-units = 1
