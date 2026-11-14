@@ -1,28 +1,58 @@
 use std::env;
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self};
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+use tokio::fs::{self, OpenOptions};
+use tokio::io::AsyncWriteExt;
+
+use tokio::sync::mpsc::{self, UnboundedSender};
 
 use chrono::Local;
 
 const DIR_NAME: &'static str = "logs";
 
-pub fn write_log(message: &str) {
-    if let Ok(path) = get_path() {
-        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-            let time = Local::now().to_utc().format("%H:%M:%S").to_string();
-            let _ = writeln!(file, "[{}]: {}", time, message);
+static LOG_TX: OnceLock<UnboundedSender<String>> = OnceLock::new();
+
+pub fn init_logger() {
+    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+
+    if LOG_TX.set(tx).is_err() {
+        return;
+    }
+
+    tokio::spawn(async move {
+        while let Some(formatted_line) = rx.recv().await {
+            if let Ok(path) = get_path().await {
+                if let Ok(mut file) = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .await
+                {
+                    let _ = file.write_all(formatted_line.as_bytes()).await;
+                }
+            }
         }
+    });
+}
+
+pub fn write_log(message: &str) {
+    let time = Local::now().format("%H:%M:%S");
+    let message = format!("[{}]: {}\n", time, message);
+
+    if let Some(tx) = LOG_TX.get() {
+        let _ = tx.send(message);
     }
 }
 
-fn get_path() -> io::Result<PathBuf> {
+async fn get_path() -> io::Result<PathBuf> {
     let mut path = env::current_dir()?;
     let file_name = Local::now().to_utc().format("%d-%m-%Y").to_string();
 
     path.push(DIR_NAME);
 
-    fs::create_dir_all(&path)?;
+    fs::create_dir_all(&path).await?;
 
     path.push(format!("{}.log", file_name));
 
