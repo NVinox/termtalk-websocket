@@ -6,14 +6,15 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, mpsc};
 
-use tokio_tungstenite::accept_async;
-use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::accept_async_with_config;
+use tokio_tungstenite::tungstenite::protocol::{Message, WebSocketConfig};
 
 use futures_util::{SinkExt, StreamExt};
 
 use crate::logger;
 
 const DEFAULT_PORT: u16 = 8000;
+const MAX_MESSAGE_LENGTH: usize = 2000;
 
 pub async fn create() {
     let port: u16 = env::var("PORT")
@@ -43,7 +44,7 @@ pub async fn create() {
         let clients_clone = clients.clone();
 
         tokio::spawn(async move {
-            let ws_stream = match accept_async(stream).await {
+            let ws_stream = match accept_async_with_config(stream, Some(websocket_config())).await {
                 Ok(stream) => stream,
                 Err(e) => {
                     print_log(&format!("Hadshake failed for IP {}: {}", client_address, e));
@@ -69,6 +70,10 @@ pub async fn create() {
             while let Some(Ok(msg)) = ws_rx.next().await {
                 match msg {
                     Message::Text(text) => {
+                        if text.chars().count() > MAX_MESSAGE_LENGTH {
+                            continue;
+                        }
+
                         let all_clients = clients_clone.lock().await;
                         let message = Message::Text(text.into());
 
@@ -85,6 +90,15 @@ pub async fn create() {
             print_log(format!("Client with IP {} disconnected", client_address).as_str());
         });
     }
+}
+
+fn websocket_config() -> WebSocketConfig {
+    let mut config = WebSocketConfig::default();
+
+    config.max_message_size = Some(64 * 1024);
+    config.max_frame_size = Some(16 * 1024);
+
+    config
 }
 
 fn print_log(message: &str) {
