@@ -25,31 +25,41 @@ pub async fn create() {
     let listener = TcpListener::bind(address)
         .await
         .expect("Error to create websocket");
-    let clients = Arc::new(Mutex::new(HashMap::<
-        SocketAddr,
-        mpsc::UnboundedSender<Message>,
-    >::new()));
+    let clients = Arc::new(Mutex::new(
+        HashMap::<SocketAddr, mpsc::Sender<Message>>::new(),
+    ));
 
     loop {
-        let (stream, client_address) = listener.accept().await.unwrap();
+        let (stream, client_address) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                print_log(&format!("TCP connect is error: {}", e));
+                continue;
+            }
+        };
+
         print_log(format!("Client with IP {} is connected", client_address).as_str());
 
         let clients_clone = clients.clone();
 
         tokio::spawn(async move {
-            let ws_stream = accept_async(stream).await.unwrap();
+            let ws_stream = match accept_async(stream).await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    print_log(&format!("Hadshake failed for IP {}: {}", client_address, e));
+                    return;
+                }
+            };
+
             print_log(format!("Client with IP {} websocket successed", client_address).as_str());
 
-            let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+            let (tx, mut rx) = mpsc::channel::<Message>(100);
             let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
             clients_clone.lock().await.insert(client_address, tx);
 
             tokio::spawn(async move {
-                while let Some(msg) = rx.recv().await {
-                    let text = msg.to_text().unwrap();
-                    let message = Message::Text(text.into());
-
+                while let Some(message) = rx.recv().await {
                     if ws_tx.send(message).await.is_err() {
                         break;
                     }
@@ -63,7 +73,7 @@ pub async fn create() {
                         let message = Message::Text(text.into());
 
                         for tx_pipe in all_clients.values() {
-                            let _ = tx_pipe.send(message.clone());
+                            let _ = tx_pipe.try_send(message.clone());
                         }
                     }
                     Message::Close(_) => break,
