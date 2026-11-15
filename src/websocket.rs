@@ -50,7 +50,10 @@ pub async fn create() {
             let ws_stream = match accept_async_with_config(stream, Some(websocket_config())).await {
                 Ok(stream) => stream,
                 Err(e) => {
-                    print_log(&format!("Hadshake failed for IP {}: {}", client_address, e));
+                    print_log(&format!(
+                        "Handshake failed for IP {}: {}",
+                        client_address, e
+                    ));
                     return;
                 }
             };
