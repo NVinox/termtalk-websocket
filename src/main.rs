@@ -1,4 +1,5 @@
 mod logger;
+mod rate_limiter;
 mod websocket;
 
 #[tokio::main]

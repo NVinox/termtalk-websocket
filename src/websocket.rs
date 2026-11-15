@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, mpsc};
+use tokio::time::{Duration, timeout};
 
 use tokio_tungstenite::accept_async_with_config;
 use tokio_tungstenite::tungstenite::protocol::{Message, WebSocketConfig};
@@ -12,9 +13,11 @@ use tokio_tungstenite::tungstenite::protocol::{Message, WebSocketConfig};
 use futures_util::{SinkExt, StreamExt};
 
 use crate::logger;
+use crate::rate_limiter::RateLimiter;
 
 const DEFAULT_PORT: u16 = 8000;
 const MAX_MESSAGE_LENGTH: usize = 2000;
+const AFK_USER_TIMEOUT: u64 = 300;
 
 pub async fn create() {
     let port: u16 = env::var("PORT")
@@ -56,6 +59,7 @@ pub async fn create() {
 
             let (tx, mut rx) = mpsc::channel::<Message>(100);
             let (mut ws_tx, mut ws_rx) = ws_stream.split();
+            let mut rate_limiter = RateLimiter::new(5.0, 2.0);
 
             clients_clone.lock().await.insert(client_address, tx);
 
@@ -67,11 +71,25 @@ pub async fn create() {
                 }
             });
 
-            while let Some(Ok(msg)) = ws_rx.next().await {
+            while let Ok(Some(Ok(msg))) =
+                timeout(Duration::from_secs(AFK_USER_TIMEOUT), ws_rx.next()).await
+            {
                 match msg {
                     Message::Text(text) => {
                         if text.chars().count() > MAX_MESSAGE_LENGTH {
                             continue;
+                        }
+
+                        match rate_limiter.check() {
+                            Ok(true) => {}
+                            Ok(false) => continue,
+                            Err(_) => {
+                                print_log(&format!(
+                                    "Client {} kicked for flooding",
+                                    client_address
+                                ));
+                                break;
+                            }
                         }
 
                         let all_clients = clients_clone.lock().await;
