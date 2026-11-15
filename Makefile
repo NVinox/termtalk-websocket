@@ -1,4 +1,4 @@
-.PHONY: dev-up dev-stop dev-down prod-up prod-stop prod-down prod-rebuild logs clean
+.PHONY: dev-up dev-stop dev-down prod-up prod-stop prod-down logs clean
 
 
 dev-up:
@@ -18,10 +18,6 @@ prod-stop:
 
 prod-down:
 	docker compose rm -s -f prod
-
-prod-rebuild:
-	docker compose build --no-cache prod
-	docker compose up -d prod
 
 logs:
 	docker compose logs -f
